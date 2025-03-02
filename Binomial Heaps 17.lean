@@ -1,4 +1,6 @@
-
+import Mathlib.Tactic.Linarith
+import Mathlib.Data.Real.Basic
+import Mathlib.Tactic
 
 -- Define a Binomial Tree structure with:
 -- - `rank`: The rank of the tree (order)
@@ -12,57 +14,63 @@ structure BinomialTree (α : Type) where
 
 namespace BinomialHeap
 
--- Provide an `Inhabited` instance for BinomialTree, setting a default empty tree
+-- Provide a default instance for BinomialTree (empty tree)
 instance [Inhabited α] : Inhabited (BinomialTree α) where
   default := ⟨0, default, []⟩
 
--- Provide an `Inhabited` instance for a pair of BinomialTree and a list of trees
+-- Provide a default instance for (BinomialTree × List of trees)
 instance [Inhabited α] : Inhabited (BinomialTree α × List (BinomialTree α)) where
   default := (default, [])
 
--- **Link two Binomial Trees of the same rank**
--- The tree with the smaller root value becomes the parent,
--- increasing the rank by 1 and adding the other tree as a child.
+-- **Link two binomial trees of the same rank**
+-- The tree with the smaller root becomes the parent, increasing the rank.
 def link {α : Type} [LE α] [DecidableRel (fun x y : α => x ≤ y)] (t1 t2 : BinomialTree α) : BinomialTree α :=
   if t1.value ≤ t2.value then
     { rank := t1.rank + 1, value := t1.value, children := t2 :: t1.children }
   else
     { rank := t2.rank + 1, value := t2.value, children := t1 :: t2.children }
 
--- **Merge two binomial heaps (lists of binomial trees)**
+-- **Merge two binomial heaps (lists of trees)**
 -- The merge function recursively processes both lists and maintains the binomial heap properties.
 def merge {α : Type} [LE α] [DecidableRel (fun x y : α => x ≤ y)] (h1 h2 : List (BinomialTree α)) : List (BinomialTree α) :=
+  
   -- Helper function to handle carrying trees of the same rank
   let rec mergeCarry (carry : BinomialTree α) (ts : List (BinomialTree α)) : List (BinomialTree α) :=
     match ts with
-    | [] => [carry]  -- If no more trees, return the carry as the final tree
+    | [] => [carry]  -- If no trees left, return the carry
     | t :: ts' =>
       if carry.rank < t.rank then
-        carry :: t :: ts'  -- If carry has a smaller rank, insert it before `t`
+        carry :: t :: ts'  -- Insert carry before `t`
       else
-        let newCarry := link carry t  -- Link `carry` and `t` to merge them
-        mergeCarry newCarry ts'  -- Recursively merge with the remaining trees
+        let newCarry := link carry t  -- Merge carry and `t`
+        mergeCarry newCarry ts'  -- Continue merging
 
   match h1, h2 with
   | [], _ => h2  -- If `h1` is empty, return `h2`
   | _, [] => h1  -- If `h2` is empty, return `h1`
   | t1 :: ts1, t2 :: ts2 =>
     if t1.rank < t2.rank then
-      t1 :: merge ts1 (t2 :: ts2)  -- Keep `t1` and merge the rest
+      t1 :: merge ts1 (t2 :: ts2)
     else if t2.rank < t1.rank then
-      t2 :: merge (t1 :: ts1) ts2  -- Keep `t2` and merge the rest
+      t2 :: merge (t1 :: ts1) ts2
     else
       let carry := link t1 t2  -- Merge two trees of the same rank
-      mergeCarry carry (merge ts1 ts2)  -- Continue merging with the carry tree
+      mergeCarry carry (merge ts1 ts2)
 
--- Define termination conditions for recursion
-termination_by h1 h2 => h1.length + h2.length
+-- **Recursive termination proof**
+termination_by h1.length + h2.length
 decreasing_by
-  simp_wf  
-  all_goals  
-  try (solve_by_elim [Nat.lt_succ_self] <;> simp_all [List.length_cons] <;> omega)
-  <;> (try (solve_by_elim [Nat.lt_succ_self] <;> simp_all [List.length_cons] <;> omega))
-  <;> (try (simp_all [List.length_cons] <;> omega))
+  simp  -- Simplify the length comparison
+  {
+    simp only [List.length]
+    rw [← Nat.add_assoc]
+    linarith  -- Use `linarith` to resolve the inequality
+  }
+  {
+    simp only [List.length]
+    rw [← Nat.add_assoc]
+    linarith
+  }
 
 -- **Insert a new element into the heap**
 -- Creates a singleton tree and merges it into the existing heap.
@@ -76,7 +84,7 @@ def findMin {α : Type} [LE α] [DecidableRel (fun x y : α => x ≤ y)] (h : Li
   | [] => none  -- If the heap is empty, return `none`
   | t :: ts =>
     match findMin ts with
-    | none => some t.value  -- If only one tree, return its value
+    | none => some t.value
     | some x => if t.value ≤ x then some t.value else some x  -- Compare root values
 
 -- **Delete the minimum element from the heap**
@@ -89,41 +97,31 @@ def deleteMin {α : Type} [LE α] [DecidableRel (fun x y : α => x ≤ y)] [Inha
       | [] => (default, [])  -- If empty, return the default tree
       | [t] => (t, [])  -- If only one tree, return it and an empty list
       | t :: ts =>
-        let (minT, rest) := extractMin ts  -- Recursively find the minimum tree
+        let (minT, rest) := extractMin ts
         if t.value ≤ minT.value then
           (t, ts)  -- If `t` is smaller, return it and the rest
         else
-          (minT, t :: rest)  -- Otherwise, keep `t` in the list
+          (minT, t :: rest)
 
     let (minTree, rest) := extractMin h  -- Extract the minimum tree
-    let reversedChildren := minTree.children.reverse  -- Reverse children to maintain correct order
-    merge rest reversedChildren  -- Merge the remaining heap with extracted children
+    let reversedChildren := minTree.children.reverse  -- Reverse children for correct order
+    merge rest reversedChildren  -- Merge remaining heap with children
 
--- **Compute the total size of the heap**
--- The size is the sum of `2^rank` for each tree.
+-- **Compute the total size of the heap (number of elements)**
+-- The size is calculated as the sum of `2^rank` for all trees.
 def size {α : Type} (h : List (BinomialTree α)) : Nat :=
   h.foldl (fun acc t => acc + (2 ^ t.rank)) 0
 
 -- **Compute the total rank of all trees in the heap**
--- Used for runtime analysis.
+-- Used for analyzing runtime complexity.
 def totalRank {α : Type} (h : List (BinomialTree α)) : Nat :=
   h.foldl (fun acc t => acc + t.rank) 0
 
 end BinomialHeap
 
 -- **Test cases**
-
--- Insert an element 5 into an empty heap
-#eval BinomialHeap.insert 5 []  
-
--- Find the minimum element in a single-node heap
-#eval BinomialHeap.findMin [BinomialTree.mk 0 2 []]  
-
--- Delete the minimum element from a single-node heap
-#eval BinomialHeap.deleteMin [BinomialTree.mk 0 2 []]  
-
--- Compute the size of a heap with a tree of rank 1 containing a rank-0 child
-#eval BinomialHeap.size [BinomialTree.mk 1 3 [BinomialTree.mk 0 5 []]]  
-
--- Compute the total rank of a heap containing nested trees
-#eval BinomialHeap.totalRank [BinomialTree.mk 2 4 [BinomialTree.mk 1 7 [BinomialTree.mk 0 9 []], BinomialTree.mk 0 10 []]]  
+#eval BinomialHeap.insert 5 []  -- Insert element 5 into an empty heap
+#eval BinomialHeap.findMin [BinomialTree.mk 0 2 []]  -- Find minimum (should return `some 2`)
+#eval BinomialHeap.deleteMin [BinomialTree.mk 0 2 []]  -- Delete the only element (should return `[]`)
+#eval BinomialHeap.size [BinomialTree.mk 1 3 [BinomialTree.mk 0 5 []]]  -- Compute heap size
+#eval BinomialHeap.totalRank [BinomialTree.mk 2 4 [BinomialTree.mk 1 7 [BinomialTree.mk 0 9 []], BinomialTree.mk 0 10 []]]  -- Compute total rank
