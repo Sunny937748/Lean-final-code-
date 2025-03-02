@@ -1,65 +1,82 @@
 
 
--- 定义左偏树 (LeftistTree)
+-- Define the LeftistTree, where a node contains:
+-- - an element `α`
+-- - a left subtree `l`
+-- - a right subtree `r`
+-- - the rank of the right spine `rnk`
 inductive LeftistTree (α : Type) where
   | empty : LeftistTree α
   | node : α → LeftistTree α → LeftistTree α → Nat → LeftistTree α
   deriving Repr
 
--- 计算 `rank`（右脊的长度）
+-- Define `rank` (length of the right spine)
 def rank {α : Type} : LeftistTree α → Nat
-  | LeftistTree.empty => 0
-  | LeftistTree.node _ _ r rnk => rnk + 1
+  | LeftistTree.empty => 0  -- The rank of an empty tree is 0
+  | LeftistTree.node _ _ r rnk => rnk + 1  -- The rank is the rank of the right subtree + 1
 
--- 计算 `size`（树的大小）
+-- Define `mh` (an alternative way to measure the right spine)
+def mh {α : Type} : LeftistTree α → Nat
+  | LeftistTree.empty => 0  -- The mh of an empty tree is 0
+  | LeftistTree.node _ _ r _ => mh r + 1  -- mh recursively computes the mh of the right subtree and adds 1
+
+-- Prove that `rank` and `mh` define the same trees
+theorem rank_eq_mh {α : Type} (t : LeftistTree α) : rank t = mh t := by
+  induction t with
+  | empty => rfl  -- Base case: for an empty tree, both are 0, so they are equal
+  | node _ l r _ ih_r =>
+    simp [rank, mh]  -- Expand the definitions of `rank` and `mh`
+    rw [ih_r]  -- Use the induction hypothesis to replace `rank r` with `mh r`
+    rfl  -- The structure remains identical, completing the proof
+
+-- Define `size` (the number of nodes in the tree)
 def size {α : Type} : LeftistTree α → Nat
-  | LeftistTree.empty => 0
-  | LeftistTree.node _ l r _ => 1 + size l + size r
+  | LeftistTree.empty => 0  -- The size of an empty tree is 0
+  | LeftistTree.node _ l r _ => 1 + size l + size r  -- The size is 1 plus the sizes of the left and right subtrees
 
--- 递归检查 `ltree_by` 是否满足某个性质
+-- Define `ltree_by`, which checks whether a leftist tree satisfies a given property
 def ltree_by {α : Type} (f : LeftistTree α → Nat) : LeftistTree α → Bool
-  | LeftistTree.empty => true
+  | LeftistTree.empty => true  -- An empty tree always satisfies the property
   | LeftistTree.node _ l r _ => (f r ≤ f l) && ltree_by f l && ltree_by f r
+  -- The tree satisfies `ltree_by` if `f r ≤ f l` and both subtrees satisfy `ltree_by` recursively
 
--- 证明 `ltree_by rank = ltree_by size`
+-- Prove that `ltree_by rank = ltree_by size`, meaning that rank and size define the same leftist tree structure
 theorem ltree_by_rank_eq_ltree_by_size {α : Type} (t : LeftistTree α) :
   ltree_by rank t = ltree_by size t := by
   induction t with
-  | empty => rfl  -- 空树情况，两者都为 true
-  | node _ l r _ =>
-    simp only [ltree_by, rank, size]
-    -- 证明 `rank r ≤ rank l` ↔ `size r ≤ size l`
+  | empty => rfl  -- Base case: for an empty tree, both return `true`
+  | node _ l r _ ih_l ih_r =>
+    simp only [ltree_by, rank, size]  -- Expand the definitions of `ltree_by`, `rank`, and `size`
     have h_equiv : rank r ≤ rank l ↔ size r ≤ size l := by
+      -- Prove that `rank r ≤ rank l` is equivalent to `size r ≤ size l`
       constructor
       · intro h
         cases r with
-        | empty => simp
-        | node _ _ _ _ => simp [rank, size]; linarith
+        | empty => simp  -- If `r` is an empty tree, the property is trivially true
+        | node _ _ _ _ => simp [rank, size]; linarith  -- Use `linarith` to handle the inequality
       · intro h
         cases r with
-        | empty => simp
+        | empty => simp  -- If `r` is an empty tree, the property holds trivially
         | node _ _ _ _ => simp [rank, size]; linarith
-    -- 使用 `rw` 替代 `decide`
-    rw [h_equiv]
-    congr 1 -- 让 Lean 识别结构相同的部分
+    rw [h_equiv]  -- Substitute `rank r ≤ rank l ↔ size r ≤ size l`
+    congr 1  -- Let Lean recognize structurally identical parts, completing the proof
 
--- 证明 `2^rank t ≤ size t + 1`
+-- Prove `2^rank t ≤ size t + 1`
 theorem leftist_tree_logarithmic_bound {α : Type} (t : LeftistTree α)
   (h : ltree_by size t) : 2^(rank t) ≤ size t + 1 := by
   induction t with
-  | empty => simp [rank, size]  -- 空树情况
-  | node _ l r _ =>
-    -- 确保左右子树满足 `ltree_by size`
+  | empty => simp [rank, size]  -- Base case: for an empty tree, this inequality holds trivially
+  | node _ l r _ ih_l ih_r =>
     cases h with
-    | intro hl hr =>
+    | intro hl hr =>  -- Decomposing `ltree_by size`, giving `size r ≤ size l`
       simp only [ltree_by, rank, size] at hl hr
-      -- 归纳假设
+      -- Inductive hypotheses
       have IHl := leftist_tree_logarithmic_bound l hl
       have IHr := leftist_tree_logarithmic_bound r hr
-      -- 计算 `rank` 和 `size` 关系
+      -- Compute `rank` and `size` relationships
       have rank_eq : rank (LeftistTree.node _ l r _) = rank r + 1 := by simp [rank]
       have size_eq : size (LeftistTree.node _ l r _) = 1 + size l + size r := by simp [size]
-      -- 归纳推导
+      -- Inductive step
       rw [rank_eq, size_eq]
       calc
         2 ^ (rank r + 1) ≤ 2 * (size r + 1) := by apply Nat.pow_le_pow_of_le_right; linarith
